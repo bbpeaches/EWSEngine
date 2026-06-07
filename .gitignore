@@ -1,0 +1,14 @@
+__pycache__/
+.vscode/
+.claude/
+.DS_Store
+.AppleDouble
+.LSOverride
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/

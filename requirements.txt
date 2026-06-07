@@ -1,0 +1,5 @@
+numpy>=2.1
+matplotlib>=3.9
+
+# Tkinter is not installed from pip. On Homebrew Python 3.13, install it with:
+# brew install python-tk@3.13
