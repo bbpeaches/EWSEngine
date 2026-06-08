@@ -1,6 +1,6 @@
 # EWSEngine
 
-Version: 0.2.0
+Version: 0.2.1
 
 EWSEngine is a reorganized electromagnetic wave simulation project. It has a typed backend physics layer, a local HTTP API, and a desktop launcher built on Tkinter and Matplotlib.
 

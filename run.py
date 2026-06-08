@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     if args.desktop_only:
-        run_desktop_app()
+        run_desktop_app(host=args.host, port=args.port)
         return
     if args.api_only:
         run_server(host=args.host, port=args.port)
@@ -33,7 +33,7 @@ def main() -> None:
     )
     server_thread.start()
     time.sleep(0.2)
-    run_desktop_app()
+    run_desktop_app(host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

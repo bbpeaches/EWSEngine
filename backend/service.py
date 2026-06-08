@@ -20,6 +20,46 @@ from backend.physics.wave import MATERIALS, WaveEngine
 from core.registry import registry
 from core.types import JsonDict, ModuleSpec, RadioSpec, SliderSpec
 
+POLARIZATION_PRESETS = {
+    "圆极化": {"mode": "phase", "p1": 1.0, "p2": 1.0, "p3": 90.0},
+    "线极化": {"mode": "phase", "p1": 1.0, "p2": 1.0, "p3": 0.0},
+    "左旋基底": {"mode": "circular", "p1": 1.0, "p2": 0.0, "p3": 0.0},
+    "天线匹配": {"mode": "match", "p1": 30.0, "p2": 30.0, "p3": 1.0},
+    "天线失配": {"mode": "match", "p1": 30.0, "p2": 80.0, "p3": 1.0},
+}
+
+TRANSMISSION_PRESETS = {
+    "匹配传输": {"mode": "vswr", "reflection_coefficient": 0.0},
+    "电压波节": {"mode": "vswr", "reflection_coefficient": -0.65},
+    "电压波腹": {"mode": "vswr", "reflection_coefficient": 0.65},
+    "行驻混合": {"mode": "standing", "reflection_coefficient": -0.45},
+    "强驻波": {"mode": "standing", "reflection_coefficient": -0.90},
+}
+
+DEFAULT_MATERIAL = next(iter(MATERIALS.keys()))
+WAVE_PRESETS = {
+    "空气行波": {"mode": "material", "material": DEFAULT_MATERIAL, "freq_mhz": 1000.0},
+    "FR4 慢波": {"mode": "material", "material": "FR4 玻纤板 (εr=4.4)", "freq_mhz": 600.0},
+    "轻度衰减": {"mode": "lossy", "material": DEFAULT_MATERIAL, "alpha": 0.2, "beta": 4.0},
+    "强衰减": {"mode": "lossy", "material": DEFAULT_MATERIAL, "alpha": 0.8, "beta": 7.0},
+    "倾斜波矢": {"mode": "planes", "material": DEFAULT_MATERIAL, "theta_deg": 55.0, "phi_deg": 40.0, "spacing": 1.6},
+    "近竖直波矢": {"mode": "planes", "material": DEFAULT_MATERIAL, "theta_deg": 20.0, "phi_deg": 140.0, "spacing": 1.2},
+}
+
+TEM_PRESETS = {
+    "X 正向": {"direction": "x", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "Y 正向": {"direction": "y", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "Z 正向": {"direction": "z", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "X 反向": {"direction": "x", "polarity": "-1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+}
+
+SPEED_PRESETS = {
+    "低群速": {"mode": "dispersion", "direction": "z", "vg": 0.5, "theta_deg": 45.0, "amplitude": 1.0, "carrier_lambda": 2.0},
+    "高群速": {"mode": "dispersion", "direction": "z", "vg": 1.6, "theta_deg": 45.0, "amplitude": 1.0, "carrier_lambda": 2.0},
+    "视在低角": {"mode": "apparent", "direction": "z", "vg": 0.5, "theta_deg": 25.0, "amplitude": 1.0, "carrier_lambda": 2.0},
+    "视在高角": {"mode": "apparent", "direction": "z", "vg": 0.5, "theta_deg": 78.0, "amplitude": 1.0, "carrier_lambda": 2.0},
+}
+
 
 class SimulationService:
     """Shared simulation service used by the local API and desktop frontend."""
@@ -84,6 +124,7 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
                 SliderSpec("p3", "参数 3", -180.0, 180.0, 90.0, 1.0, "darkorange"),
             ),
             radios=(RadioSpec("mode", "实验模式", ("phase", "circular", "match"), "phase"),),
+            presets=POLARIZATION_PRESETS,
         ),
         ModuleSpec(
             key="transmission",
@@ -94,6 +135,7 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
             scene_factory=scene_factory("transmission") if include_scenes else None,
             sliders=(SliderSpec("reflection_coefficient", "反射系数 R", -0.99, 0.99, 0.0, 0.01),),
             radios=(RadioSpec("mode", "实验模式", ("vswr", "standing"), "vswr"),),
+            presets=TRANSMISSION_PRESETS,
         ),
         ModuleSpec(
             key="wave",
@@ -114,6 +156,7 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
                 RadioSpec("mode", "实验模式", ("material", "lossy", "planes"), "material"),
                 RadioSpec("material", "材料", tuple(MATERIALS.keys()), next(iter(MATERIALS.keys()))),
             ),
+            presets=WAVE_PRESETS,
         ),
         ModuleSpec(
             key="tem",
@@ -132,6 +175,7 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
                 RadioSpec("direction", "传播轴", ("x", "y", "z"), "x"),
                 RadioSpec("polarity", "相位方向", ("1", "-1"), "1"),
             ),
+            presets=TEM_PRESETS,
         ),
         ModuleSpec(
             key="speed",
@@ -150,6 +194,7 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
                 RadioSpec("mode", "实验模式", ("dispersion", "apparent"), "dispersion"),
                 RadioSpec("direction", "传播方向", ("x", "y", "z"), "z"),
             ),
+            presets=SPEED_PRESETS,
         ),
     )
 

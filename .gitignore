@@ -11,4 +11,6 @@ __pycache__/
 .venv/
 dist/
 build/
+.git/
 *.egg-info/
+EWSEngine.md

@@ -5,16 +5,19 @@ from tkinter import ttk
 
 from backend.service import ensure_registry
 from core.registry import registry
+from frontend.app_v2 import ModernAppToplevel
 
 
 class AppLauncher(tk.Tk):
-    """Simple desktop launcher used during and after migration."""
+    """Desktop launcher that routes migrated scenes to Tk shell windows."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, host: str = "127.0.0.1", port: int = 8765) -> None:
+        self.api_host = host
+        self.api_port = int(port)
         ensure_registry(include_scenes=True)
         super().__init__()
         self.title("EWSEngine 控制台")
-        self.geometry("460x430")
+        self.geometry("480x460")
         self.configure(bg="#eef1f6")
         self._build()
 
@@ -26,7 +29,18 @@ class AppLauncher(tk.Tk):
             bg="#eef1f6",
             fg="#243447",
         )
-        title.pack(pady=18)
+        title.pack(pady=(18, 8))
+
+        subtitle = tk.Label(
+            self,
+            text="所有已迁移模块都会以左右分栏 Tk 窗口打开，启动菜单保持常驻。",
+            font=("Microsoft YaHei", 10),
+            bg="#eef1f6",
+            fg="#51606f",
+            wraplength=420,
+            justify=tk.LEFT,
+        )
+        subtitle.pack(padx=18, pady=(0, 18), anchor=tk.W)
 
         modules = registry.all()
         if not modules:
@@ -37,19 +51,17 @@ class AppLauncher(tk.Tk):
             button = ttk.Button(
                 self,
                 text=module.name,
-                command=lambda key=module.key: self._launch(key),
-                width=34,
+                command=lambda scene_factory=registry.get_scene(module.key): self._launch(scene_factory),
+                width=36,
             )
             button.pack(pady=6)
 
-        ttk.Button(self, text="退出", command=self.destroy, width=34).pack(side=tk.BOTTOM, pady=20)
+        ttk.Button(self, text="退出", command=self.destroy, width=36).pack(side=tk.BOTTOM, pady=20)
 
-    def _launch(self, key: str) -> None:
-        scene_class = registry.get_scene(key)
-        scene = scene_class()
-        scene.show()
+    def _launch(self, scene_class: type[object]) -> None:
+        ModernAppToplevel(self, scene_factory=scene_class, host=self.api_host, port=self.api_port)
 
 
-def run_desktop_app() -> None:
-    app = AppLauncher()
+def run_desktop_app(host: str = "127.0.0.1", port: int = 8765) -> None:
+    app = AppLauncher(host=host, port=port)
     app.mainloop()
