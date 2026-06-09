@@ -36,6 +36,7 @@ class ModernAppBase:
         self.time = 0.0
         self.zoom = 1.0
         self.is_paused = False
+        self._is_rendering = False  
         self._render_job: str | None = None
         self._animation_job: str | None = None
         self._suspend_controls = False
@@ -301,34 +302,45 @@ class ModernAppBase:
         return payload
 
     def render_now(self) -> None:
-        self._render_job = None
-        payload = self.collect_payload()
+        if getattr(self, "_is_rendering", False):
+            return
+            
+        self._is_rendering = True
         try:
-            payload = self.scene.prepare_payload(payload)
-            frame = self.client.fetch_frame(self.scene.module_key, payload, "local")
-            panel = self.scene.render(frame)
-        except FrontendError as exc:
-            self.error_var.set(str(exc))
-            return
-        except Exception as exc:  # noqa: BLE001 - keep the UI alive after unexpected render errors.
-            self.error_var.set(f"Render failed: {exc}")
-            return
-        self.error_var.set("")
-        self._update_panel(panel)
-        self.canvas.draw_idle()
+            self._render_job = None
+            payload = self.collect_payload()
+            try:
+                payload = self.scene.prepare_payload(payload)
+                frame = self.client.fetch_frame(self.scene.module_key, payload, "local")
+                panel = self.scene.render(frame)
+            except FrontendError as exc:
+                self.error_var.set(str(exc))
+                return
+            except Exception as exc:  # noqa: BLE001
+                self.error_var.set(f"Render failed: {exc}")
+                return
+            
+            self.error_var.set("")
+            self._update_panel(panel)
+            self.canvas.draw_idle()
+            
+        finally:
+            self._is_rendering = False
 
     def _request_render(self) -> None:
         if self._render_job is not None:
             self.after_cancel(self._render_job)
-        self._render_job = self.after(25, self.render_now)
+        self._render_job = self.after(10, self.render_now)
 
     def _schedule_animation(self) -> None:
         self._animation_job = self.after(40, self._animation_tick)
 
     def _animation_tick(self) -> None:
         if not self.is_paused:
-            self.time += 0.05 * self._time_scale()
-            self._request_render()
+            if not self._is_rendering:
+                self.time += 0.05 * self._time_scale()
+                self.render_now()
+        
         self._schedule_animation()
 
     def _time_scale(self) -> float:

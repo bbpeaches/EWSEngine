@@ -29,11 +29,12 @@ class SimulationClient:
         normalized_mode = mode.strip().lower()
         if normalized_mode == "local":
             raw_frame = self._fetch_local(module_key, payload)
+            return raw_frame
         elif normalized_mode == "http":
             raw_frame = self._fetch_http(module_key, payload)
+            return _normalize_mapping(raw_frame)
         else:
             raise FrontendError(f"Unsupported simulation mode: {mode!r}.")
-        return _normalize_mapping(raw_frame)
 
     def _fetch_local(self, module_key: str, payload: Mapping[str, Any]) -> Any:
         try:

@@ -31,17 +31,6 @@ class AppLauncher(tk.Tk):
         )
         title.pack(pady=(18, 8))
 
-        subtitle = tk.Label(
-            self,
-            text="所有已迁移模块都会以左右分栏 Tk 窗口打开，启动菜单保持常驻。",
-            font=("Microsoft YaHei", 10),
-            bg="#eef1f6",
-            fg="#51606f",
-            wraplength=420,
-            justify=tk.LEFT,
-        )
-        subtitle.pack(padx=18, pady=(0, 18), anchor=tk.W)
-
         modules = registry.all()
         if not modules:
             tk.Label(self, text="未检测到已注册模块", bg="#eef1f6").pack(pady=12)
