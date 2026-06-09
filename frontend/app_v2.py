@@ -16,6 +16,10 @@ from core.types import RadioSpec, SliderSpec
 from frontend.client import SimulationClient
 from frontend.scenes.optics import OpticsScene
 
+APP_VERSION = "0.2.3"
+RENDER_DELAY_MS = 20
+ANIMATION_INTERVAL_MS = 90
+
 
 class SceneFactory(Protocol):
     def __call__(self, ax: Axes3D | None = None, figure: Figure | None = None) -> Any:
@@ -35,8 +39,10 @@ class ModernAppBase:
         self.client = SimulationClient(host=host, port=port)
         self.time = 0.0
         self.zoom = 1.0
+        self.zoom_var = tk.StringVar(value=self._format_zoom())
         self.is_paused = False
-        self._is_rendering = False  
+        self._is_rendering = False
+        self._closed = False
         self._render_job: str | None = None
         self._animation_job: str | None = None
         self._suspend_controls = False
@@ -47,11 +53,13 @@ class ModernAppBase:
         self.slider_specs: dict[str, SliderSpec] = {}
         self.radio_vars: dict[str, tk.StringVar] = {}
         self.radio_specs: dict[str, RadioSpec] = {}
+        self.preset_var: tk.StringVar | None = None
+        self.view_var: tk.StringVar | None = None
         self.error_var: tk.StringVar
 
-        self.title("EWSEngine 0.2.1")
+        self.title(f"EWSEngine {APP_VERSION}")
         self.geometry("1280x820")
-        self.minsize(1080, 680)
+        self.minsize(900, 520)
         self.configure(bg="#eef1f6")
         self.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -62,7 +70,8 @@ class ModernAppBase:
         self.ax.set_facecolor("#f5f7fb")
         factory = scene_factory or OpticsScene
         self.scene = factory(ax=self.ax, figure=self.fig)
-        self.title(f"EWSEngine 0.2.1 - {self.scene.title}")
+        self.title(f"EWSEngine {APP_VERSION} - {self.scene.title}")
+        self._build_view_controls()
         self._build_canvas()
         self._build_controls()
         getattr(self.scene, "on_mount", lambda _app: None)(self)
@@ -87,7 +96,8 @@ class ModernAppBase:
         ttk.Button(toolbar, text="重置视角", command=self.reset_view, width=10).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(toolbar, text="放大", command=lambda: self.set_zoom(self.zoom * 1.18), width=7).pack(side=tk.LEFT)
         ttk.Button(toolbar, text="缩小", command=lambda: self.set_zoom(self.zoom / 1.18), width=7).pack(side=tk.LEFT, padx=6)
-        ttk.Button(toolbar, text="1x", command=lambda: self.set_zoom(1.0), width=6).pack(side=tk.LEFT)
+        ttk.Button(toolbar, text="重置缩放", command=lambda: self.set_zoom(1.0), width=10).pack(side=tk.LEFT)
+        ttk.Label(toolbar, textvariable=self.zoom_var, foreground="#51606f", width=10).pack(side=tk.LEFT, padx=(8, 0))
 
         body = ttk.Frame(self)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -102,6 +112,18 @@ class ModernAppBase:
         widget = self.canvas.get_tk_widget()
         widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+    def _build_view_controls(self) -> None:
+        presets = tuple(getattr(self.scene, "view_presets", {}).keys())
+        if not presets:
+            return
+        row = ttk.Frame(self.canvas_area, padding=(8, 6))
+        row.pack(side=tk.TOP, fill=tk.X)
+        ttk.Label(row, text="投影视角").pack(side=tk.LEFT, padx=(0, 8))
+        self.view_var = tk.StringVar(value="默认")
+        combo = ttk.Combobox(row, textvariable=self.view_var, values=presets, state="readonly", width=12)
+        combo.pack(side=tk.LEFT)
+        combo.bind("<<ComboboxSelected>>", lambda _: self.apply_view_preset(self.view_var.get()))
+
     def _build_controls(self) -> None:
         self.scroll_canvas = tk.Canvas(self.control_panel, highlightthickness=0, bg="#eef1f6")
         scrollbar = ttk.Scrollbar(self.control_panel, orient=tk.VERTICAL, command=self.scroll_canvas.yview)
@@ -112,6 +134,14 @@ class ModernAppBase:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.scroll_frame.bind("<Configure>", self._update_scroll_region)
         self.scroll_canvas.bind("<Configure>", self._resize_scroll_window)
+        self.scroll_canvas.bind("<Enter>", self._bind_panel_scroll)
+        self.scroll_canvas.bind("<Leave>", self._unbind_panel_scroll)
+        self.scroll_frame.bind("<Enter>", self._bind_panel_scroll)
+        self.scroll_frame.bind("<Leave>", self._unbind_panel_scroll)
+        self.scroll_canvas.bind("<ButtonPress-1>", self._start_panel_drag)
+        self.scroll_canvas.bind("<B1-Motion>", self._drag_panel)
+        self.scroll_frame.bind("<ButtonPress-1>", self._start_panel_drag)
+        self.scroll_frame.bind("<B1-Motion>", self._drag_panel)
 
         ttk.Label(
             self.scroll_frame,
@@ -124,6 +154,7 @@ class ModernAppBase:
         self._build_radio_controls(tuple(self.scene.radio_specs))
         self._build_panel_text()
         self._refresh_control_labels()
+        self._bind_control_panel_scroll(self.control_panel)
 
     def _build_preset_controls(self) -> None:
         presets = getattr(self.scene, "presets", {})
@@ -218,36 +249,117 @@ class ModernAppBase:
     def _resize_scroll_window(self, event: tk.Event[Any]) -> None:
         self.scroll_canvas.itemconfigure(self.scroll_window, width=event.width)
 
+    def _bind_panel_scroll(self, _: tk.Event[Any]) -> None:
+        self.bind_all("<MouseWheel>", self._on_panel_mousewheel)
+        self.bind_all("<Button-4>", self._on_panel_mousewheel)
+        self.bind_all("<Button-5>", self._on_panel_mousewheel)
+
+    def _unbind_panel_scroll(self, _: tk.Event[Any]) -> None:
+        self.unbind_all("<MouseWheel>")
+        self.unbind_all("<Button-4>")
+        self.unbind_all("<Button-5>")
+
+    def _on_panel_mousewheel(self, event: tk.Event[Any]) -> str:
+        if getattr(event, "num", None) == 4: 
+            units = -3
+        elif getattr(event, "num", None) == 5:
+            units = 3
+        else:
+            if platform.system() == "Darwin":
+                units = -event.delta
+            else:
+                units = int(-event.delta / 120)
+
+        if units:
+            self.scroll_canvas.yview_scroll(units, "units")
+        return "break"
+
+    def _start_panel_drag(self, event: tk.Event[Any]) -> None:
+        x = event.x_root - self.scroll_canvas.winfo_rootx()
+        y = event.y_root - self.scroll_canvas.winfo_rooty()
+        self.scroll_canvas.scan_mark(x, y)
+
+    def _drag_panel(self, event: tk.Event[Any]) -> None:
+        x = event.x_root - self.scroll_canvas.winfo_rootx()
+        y = event.y_root - self.scroll_canvas.winfo_rooty()
+        self.scroll_canvas.scan_dragto(x, y, gain=1)
+
+    def _bind_control_panel_scroll(self, widget: tk.Misc) -> None:
+        widget.bind("<Enter>", self._bind_panel_scroll, add="+")
+        widget.bind("<Leave>", self._unbind_panel_scroll, add="+")
+        widget.bind("<MouseWheel>", self._on_panel_mousewheel, add="+")
+        widget.bind("<Button-4>", self._on_panel_mousewheel, add="+")
+        widget.bind("<Button-5>", self._on_panel_mousewheel, add="+")
+        for child in widget.winfo_children():
+            self._bind_control_panel_scroll(child)
+
     def _on_slider_changed(self, key: str, raw_value: str) -> None:
         spec = self.slider_specs[key]
         value = float(raw_value)
         self.slider_value_vars[key].set(self._format_slider_value(spec, value))
         if not self._suspend_controls:
+            self._sync_preset_selection_from_controls()
             self._request_render()
 
     def _on_radio_changed(self, key: str) -> None:
         if self._suspend_controls:
             return
         self.scene.on_control_changed(key, self.radio_vars[key].get(), self)
+        self._sync_preset_selection_from_controls()
         self._request_render()
 
     def apply_preset(self, name: str) -> None:
         presets: Mapping[str, Mapping[str, Any]] = self.scene.presets
+        if name not in presets:
+            return
         values = presets[name]
         self._suspend_controls = True
         try:
             for key, value in values.items():
-                if key in self.slider_vars:
-                    self.set_slider_value(key, float(value))
                 if key in self.radio_vars:
                     self.radio_vars[key].set(str(value))
                     self.scene.on_control_changed(key, str(value), self)
+            for key, spec in self.radio_specs.items():
+                if key not in values:
+                    self.radio_vars[key].set(spec.value)
+                    self.scene.on_control_changed(key, spec.value, self)
+            for key, value in values.items():
+                if key in self.slider_vars:
+                    self.set_slider_value(key, float(value))
         finally:
             self._suspend_controls = False
+        if self.preset_var is not None:
+            self.preset_var.set(name)
         self._request_render()
 
     def get_slider_value(self, key: str) -> float:
         return float(self.slider_vars[key].get())
+
+    def _sync_preset_selection_from_controls(self) -> None:
+        if self.preset_var is None:
+            return
+        presets = getattr(self.scene, "presets", {})
+        for name, values in presets.items():
+            if self._controls_match_preset(values):
+                self.preset_var.set(name)
+                return
+        self.preset_var.set("")
+
+    def _controls_match_preset(self, values: Mapping[str, Any]) -> bool:
+        for key, value in values.items():
+            if key in self.slider_vars:
+                if abs(self.get_slider_value(key) - float(value)) > 1e-6:
+                    return False
+            elif key in self.radio_vars:
+                if self.get_radio_value(key) != str(value):
+                    return False
+        for key, var in self.radio_vars.items():
+            if key in values:
+                continue
+            spec = self.radio_specs[key]
+            if var.get() != spec.value:
+                return False
+        return True
 
     def set_slider_value(self, key: str, value: float) -> None:
         spec = self.slider_specs[key]
@@ -302,9 +414,9 @@ class ModernAppBase:
         return payload
 
     def render_now(self) -> None:
-        if getattr(self, "_is_rendering", False):
+        if self._closed or getattr(self, "_is_rendering", False):
             return
-            
+
         self._is_rendering = True
         try:
             self._render_job = None
@@ -319,28 +431,33 @@ class ModernAppBase:
             except Exception as exc:  # noqa: BLE001
                 self.error_var.set(f"Render failed: {exc}")
                 return
-            
+
             self.error_var.set("")
             self._update_panel(panel)
             self.canvas.draw_idle()
-            
+
         finally:
             self._is_rendering = False
 
     def _request_render(self) -> None:
+        if self._closed:
+            return
         if self._render_job is not None:
             self.after_cancel(self._render_job)
-        self._render_job = self.after(10, self.render_now)
+        self._render_job = self.after(RENDER_DELAY_MS, self.render_now)
 
     def _schedule_animation(self) -> None:
-        self._animation_job = self.after(40, self._animation_tick)
+        if self._closed:
+            return
+        self._animation_job = self.after(ANIMATION_INTERVAL_MS, self._animation_tick)
 
     def _animation_tick(self) -> None:
-        if not self.is_paused:
-            if not self._is_rendering:
-                self.time += 0.05 * self._time_scale()
-                self.render_now()
-        
+        if self._closed:
+            return
+        if not self.is_paused and not self._is_rendering:
+            self.time += 0.05 * self._time_scale()
+            self._request_render()
+
         self._schedule_animation()
 
     def _time_scale(self) -> float:
@@ -370,10 +487,17 @@ class ModernAppBase:
 
     def reset_view(self) -> None:
         self.scene.reset_view()
+        if self.view_var is not None:
+            self.view_var.set("默认")
+        self._request_render()
+
+    def apply_view_preset(self, name: str) -> None:
+        self.scene.apply_view_preset(name)
         self._request_render()
 
     def set_zoom(self, zoom: float) -> None:
         self.zoom = float(max(0.6, min(4.0, zoom)))
+        self.zoom_var.set(self._format_zoom())
         self._request_render()
 
     def _on_scroll(self, event: Any) -> None:
@@ -393,6 +517,9 @@ class ModernAppBase:
         elif key in ("-", "_"):
             self.set_zoom(self.zoom / 1.12)
 
+    def _format_zoom(self) -> str:
+        return f"缩放 {self.zoom:.2f}x"
+
     def _format_slider_value(self, spec: SliderSpec, value: float) -> str:
         if spec.step is None or spec.step >= 1.0:
             return f"{value:.1f}"
@@ -401,6 +528,7 @@ class ModernAppBase:
         return f"{value:.2f}"
 
     def close(self) -> None:
+        self._closed = True
         if self._render_job is not None:
             self.after_cancel(self._render_job)
             self._render_job = None

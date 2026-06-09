@@ -47,10 +47,13 @@ WAVE_PRESETS = {
 }
 
 TEM_PRESETS = {
-    "X 正向": {"direction": "x", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
-    "Y 正向": {"direction": "y", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
-    "Z 正向": {"direction": "z", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
-    "X 反向": {"direction": "x", "polarity": "-1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "X 正向": {"mode": "lossless", "direction": "x", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "Y 正向": {"mode": "lossless", "direction": "y", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "Z 正向": {"mode": "lossless", "direction": "z", "polarity": "1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "X 反向": {"mode": "lossless", "direction": "x", "polarity": "-1", "amplitude": 3.0, "wavelength": 5.0, "speed": 2.0},
+    "X 有损耗": {"mode": "lossy", "direction": "x", "polarity": "1", "amplitude": 3.0, "speed": 2.0, "alpha": 0.25, "beta": 5.0},
+    "Z 有损耗": {"mode": "lossy", "direction": "z", "polarity": "1", "amplitude": 3.0, "speed": 2.0, "alpha": 0.35, "beta": 6.0},
+    "强衰减 TEM": {"mode": "lossy", "direction": "z", "polarity": "-1", "amplitude": 3.0, "speed": 2.0, "alpha": 0.75, "beta": 7.0},
 }
 
 SPEED_PRESETS = {
@@ -123,7 +126,10 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
                 SliderSpec("p2", "参数 2", 0.0, 1.5, 1.0, 0.05, "forestgreen"),
                 SliderSpec("p3", "参数 3", -180.0, 180.0, 90.0, 1.0, "darkorange"),
             ),
-            radios=(RadioSpec("mode", "实验模式", ("phase", "circular", "match"), "phase"),),
+            radios=(
+                RadioSpec("mode", "实验模式", ("phase", "circular", "match"), "phase"),
+                RadioSpec("h_display", "磁场显示", ("隐藏", "H", "377H"), "隐藏"),
+            ),
             presets=POLARIZATION_PRESETS,
         ),
         ModuleSpec(
@@ -134,7 +140,10 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
             engine=TransmissionEngine(),
             scene_factory=scene_factory("transmission") if include_scenes else None,
             sliders=(SliderSpec("reflection_coefficient", "反射系数 R", -0.99, 0.99, 0.0, 0.01),),
-            radios=(RadioSpec("mode", "实验模式", ("vswr", "standing"), "vswr"),),
+            radios=(
+                RadioSpec("mode", "实验模式", ("vswr", "standing"), "vswr"),
+                RadioSpec("h_display", "磁场显示", ("隐藏", "H", "377H"), "隐藏"),
+            ),
             presets=TRANSMISSION_PRESETS,
         ),
         ModuleSpec(
@@ -155,13 +164,14 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
             radios=(
                 RadioSpec("mode", "实验模式", ("material", "lossy", "planes"), "material"),
                 RadioSpec("material", "材料", tuple(MATERIALS.keys()), next(iter(MATERIALS.keys()))),
+                RadioSpec("h_display", "磁场显示", ("隐藏", "H", "377H"), "隐藏"),
             ),
             presets=WAVE_PRESETS,
         ),
         ModuleSpec(
             key="tem",
             name="TEM 平面波",
-            description="Uniform TEM wave with propagation-axis and polarity controls.",
+            description="Uniform and lossy TEM wave with propagation-axis and polarity controls.",
             input_model=TemInput,
             engine=TemEngine(),
             scene_factory=scene_factory("tem") if include_scenes else None,
@@ -169,11 +179,15 @@ def build_specs(*, include_scenes: bool) -> tuple[ModuleSpec[Any, Any], ...]:
                 SliderSpec("amplitude", "振幅", 0.5, 6.0, 3.0, 0.1),
                 SliderSpec("wavelength", "波长", 1.0, 10.0, 5.0, 0.1),
                 SliderSpec("speed", "传播速度", 0.5, 5.0, 2.0, 0.1),
+                SliderSpec("alpha", "衰减常数 alpha", 0.0, 1.2, 0.2, 0.01),
+                SliderSpec("beta", "相位常数 beta", 1.0, 10.0, 5.0, 0.05),
                 SliderSpec("time_scale", "动画速度", 0.2, 3.0, 1.0, 0.1),
             ),
             radios=(
+                RadioSpec("mode", "TEM 模式", ("lossless", "lossy"), "lossless"),
                 RadioSpec("direction", "传播轴", ("x", "y", "z"), "x"),
                 RadioSpec("polarity", "相位方向", ("1", "-1"), "1"),
+                RadioSpec("h_display", "磁场显示", ("隐藏", "H", "377H"), "377H"),
             ),
             presets=TEM_PRESETS,
         ),

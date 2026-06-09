@@ -5,11 +5,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from backend.interfaces import SimulationEngine
-from backend.models import MarkerData, PanelText, TransmissionFrame, TransmissionInput, empty_line
+from backend.models import INTRINSIC_IMPEDANCE, MarkerData, PanelText, TransmissionFrame, TransmissionInput, empty_line
 from backend.physics.geometry import limits, line_from_components, marker_from_point
 from core.exceptions import ValidationError
 
-DISTANCE = np.linspace(-4.0, 0.0, 460)
+DISTANCE = np.linspace(-8.0, 0.0, 460)
 BETA = 2.0 * np.pi
 MIN_ZOOM = 0.65
 MAX_ZOOM = 4.0
@@ -20,10 +20,11 @@ class TransmissionEngine(SimulationEngine[TransmissionInput, TransmissionFrame])
     def simulate(self, input_data: TransmissionInput) -> TransmissionFrame:
         validate(input_data)
         reflection = input_data.reflection_coefficient
-        env_e, env_h = envelope_values(reflection)
+        env_e, env_h_display = envelope_values(reflection)
+        env_h = env_h_display / INTRINSIC_IMPEDANCE
         scale = float(np.clip(input_data.zoom, MIN_ZOOM, MAX_ZOOM))
-        field_extent = max(float(np.max(env_e)), float(np.max(env_h)), 2.2)
-        axis_limits = limits((float(np.mean(DISTANCE) - 2.35 / scale), float(np.mean(DISTANCE) + 2.35 / scale)), (-1.75 / scale, 1.75 / scale), (0.0, max(field_extent, 2.35) / scale))
+        field_extent = max(float(np.max(env_e)), float(np.max(env_h_display)), 2.2)
+        axis_limits = limits((float(np.mean(DISTANCE) - 4.7 / scale), float(np.mean(DISTANCE) + 4.7 / scale)), (-1.75 / scale, 1.75 / scale), (0.0, max(field_extent, 2.35) / scale))
         axis_line = line_from_components((DISTANCE[0], 0.0), (0.0, 0.0), (0.0, 0.0))
         boundary_line = line_from_components((0.0, 0.0), (-1.45, 1.45), (0.0, 0.0))
 
@@ -35,8 +36,9 @@ class TransmissionEngine(SimulationEngine[TransmissionInput, TransmissionFrame])
             magnetic_marker = marker_from_point((probe_x, 0.72, float(np.interp(probe_x, DISTANCE, env_h))))
             return TransmissionFrame(
                 "驻波包络 3D 监视器",
-                panel_text(input_data, env_e, env_h),
+                panel_text(input_data, env_e, env_h_display),
                 axis_limits,
+                input_data.h_display,
                 electric,
                 magnetic,
                 empty_line(),
@@ -55,8 +57,9 @@ class TransmissionEngine(SimulationEngine[TransmissionInput, TransmissionFrame])
         probe_x = probe_position(input_data.time)
         return TransmissionFrame(
             "行驻波分解 3D 实验",
-            panel_text(input_data, env_e, env_h),
+            panel_text(input_data, env_e, env_h_display),
             axis_limits,
+            input_data.h_display,
             empty_line(),
             empty_line(),
             line_from_components(DISTANCE, np.zeros_like(DISTANCE), env_e),
@@ -73,6 +76,8 @@ class TransmissionEngine(SimulationEngine[TransmissionInput, TransmissionFrame])
 def validate(input_data: TransmissionInput) -> None:
     if input_data.mode not in {"vswr", "standing"}:
         raise ValidationError("Unsupported transmission-line mode.")
+    if input_data.h_display not in {"隐藏", "H", "377H"}:
+        raise ValidationError("Unsupported H display mode.")
     if not -0.999 < input_data.reflection_coefficient < 0.999:
         raise ValidationError("Reflection coefficient must be in (-0.999, 0.999).")
     if input_data.zoom <= 0.0:

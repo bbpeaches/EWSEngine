@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from backend.models import INTRINSIC_IMPEDANCE
 from backend.physics.wave import MATERIALS
 from core.types import RadioSpec, SliderSpec
-from frontend.plot_tools import apply_limits, set_line_3d, set_marker
+from frontend.plot_tools import apply_limits, clear_line, set_line_3d, set_marker, set_scaled_line_3d
 from frontend.scenes.base import BaseSimulationScene
 
 MODE_FIELDS = {
@@ -48,6 +49,7 @@ class WaveScene(BaseSimulationScene):
     radio_specs = (
         RadioSpec("mode", "实验模式", ("material", "lossy", "planes"), "material"),
         RadioSpec("material", "材料", tuple(MATERIALS.keys()), DEFAULT_MATERIAL),
+        RadioSpec("h_display", "磁场显示", ("隐藏", "H", "377H"), "隐藏"),
     )
     presets = PRESETS
     default_elev = 24.0
@@ -55,7 +57,8 @@ class WaveScene(BaseSimulationScene):
     axis_labels = ("空间 / 坐标", "显示通道 / 坐标", "幅度 / 相位面法向")
 
     def init_artists(self) -> None:
-        self.wave_line, = self.ax.plot([], [], [], color="royalblue", lw=2.5, label="行波")
+        self.wave_line, = self.ax.plot([], [], [], color="royalblue", lw=2.5, label="电场 E")
+        self.magnetic_line, = self.ax.plot([], [], [], color="forestgreen", lw=2.3, label="磁场 H / 377H")
         self.envelope_up, = self.ax.plot([], [], [], color="gray", linestyle="--", lw=1.6, alpha=0.75, label="衰减包络")
         self.envelope_down, = self.ax.plot([], [], [], color="gray", linestyle="--", lw=1.6, alpha=0.75)
         self.axis_line, = self.ax.plot([], [], [], color="slategray", lw=2.2, alpha=0.9, label="传播轴")
@@ -87,6 +90,7 @@ class WaveScene(BaseSimulationScene):
     def render(self, payload: dict[str, Any]) -> Mapping[str, Any]:
         frame = payload
         set_line_3d(self.wave_line, frame["wave_line"])
+        self._render_magnetic(frame)
         set_line_3d(self.envelope_up, frame["envelope_up"])
         set_line_3d(self.envelope_down, frame["envelope_down"])
         set_line_3d(self.axis_line, frame["axis_line"])
@@ -95,6 +99,15 @@ class WaveScene(BaseSimulationScene):
         self.update_planes(self.plane_artists, frame.get("planes", []))
         apply_limits(self.ax, frame["axis_limits"])
         return _panel(frame)
+
+    def _render_magnetic(self, frame: dict[str, Any]) -> None:
+        h_display = frame.get("h_display", "隐藏")
+        if h_display == "隐藏" or len(frame["magnetic_line"]["x"]) == 0:
+            clear_line(self.magnetic_line)
+            self.magnetic_line.set_visible(False)
+            return
+        scale = INTRINSIC_IMPEDANCE if h_display == "377H" else 1.0
+        set_scaled_line_3d(self.magnetic_line, frame["magnetic_line"], ("y",), scale)
 
 
 def _panel(frame: Mapping[str, Any]) -> Mapping[str, Any]:

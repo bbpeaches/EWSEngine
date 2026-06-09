@@ -32,7 +32,7 @@ from backend.physics.geometry import (
 from core.exceptions import ValidationError
 
 INTERFACE_HALF = 2.8
-RAY_LENGTH = 2.6
+RAY_LENGTH = 5.2
 ARC_RADIUS = 0.60
 DIPOLE_SCALE = 0.72
 MIN_ZOOM = 0.65
@@ -248,8 +248,8 @@ def interpolate_point(start: tuple[float, float, float], end: tuple[float, float
 
 def build_limits(zoom: float) -> AxisLimits:
     zoom = float(np.clip(zoom, MIN_ZOOM, MAX_ZOOM))
-    xy_half = 3.2 / zoom
-    z_half = 2.7 / zoom
+    xy_half = 6.4 / zoom
+    z_half = 5.4 / zoom
     return limits((-xy_half, xy_half), (-xy_half, xy_half), (-z_half, z_half))
 
 

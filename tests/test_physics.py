@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from backend.physics.optics import fresnel
-from backend.physics.polarization import classify_phase
-from backend.physics.transmission import envelope_values
-from backend.models import OpticsInput
+import numpy as np
+
+from backend.models import INTRINSIC_IMPEDANCE, OpticsInput, PolarizationInput, SpeedInput, TemInput, TransmissionInput, WaveInput
+from backend.physics.optics import OpticsEngine, fresnel
+from backend.physics.polarization import PolarizationEngine, classify_phase
+from backend.physics.speed import SpeedEngine
+from backend.physics.tem import TemEngine, compute_wave
+from backend.physics.transmission import TransmissionEngine, envelope_values
+from backend.physics.wave import render_lossy, render_material
 
 
 def test_fresnel_conserves_power_for_lossless_case() -> None:
@@ -31,3 +36,40 @@ def test_envelope_values_use_reflection_sign_consistently() -> None:
     env_e, env_h = envelope_values(-0.6)
     assert env_e.min() >= 0.0
     assert env_h.min() >= 0.0
+
+
+def test_lossy_tem_wave_uses_exponential_envelope() -> None:
+    samples = np.asarray([0.0, 5.0, 10.0], dtype=float)
+    values, _, _, envelope = compute_wave(
+        TemInput(mode="lossy", alpha=0.2, beta=5.0, speed=2.0, time=0.0),
+        samples,
+    )
+    assert envelope[0] > envelope[1] > envelope[2]
+    assert abs(values[0]) > abs(values[-1])
+
+
+def test_wave_material_and_lossy_frames_include_377h_line() -> None:
+    material_frame = render_material(WaveInput(mode="material", h_display="377H"))
+    lossy_frame = render_lossy(WaveInput(mode="lossy", alpha=0.4, beta=5.0, h_display="377H"))
+    assert len(material_frame.magnetic_line.x) > 0
+    assert len(lossy_frame.magnetic_line.x) > 0
+    assert np.isclose(np.max(np.abs(material_frame.magnetic_line.y)) * INTRINSIC_IMPEDANCE, 1.0)
+    assert np.max(np.abs(lossy_frame.magnetic_line.y)) * INTRINSIC_IMPEDANCE > 0.0
+
+
+def test_propagation_coordinate_ranges_are_doubled() -> None:
+    assert np.isclose(max(TemEngine().simulate(TemInput(direction="x")).propagation_axis.x), 30.0)
+    assert np.isclose(max(SpeedEngine().simulate(SpeedInput(direction="z")).propagation_axis.z), 36.0)
+    assert np.isclose(max(PolarizationEngine().simulate(PolarizationInput()).wave_line.z), 24.0)
+    assert np.isclose(min(TransmissionEngine().simulate(TransmissionInput()).axis_line.x), -8.0)
+    optics = OpticsEngine().simulate(OpticsInput(theta_deg=0.0))
+    assert np.isclose(max(optics.incident_line.z), 5.2)
+
+
+def test_polarization_frame_includes_physical_h_field() -> None:
+    frame = PolarizationEngine().simulate(PolarizationInput(p1=1.0, p2=0.0, p3=0.0, h_display="H"))
+    assert frame.h_display == "H"
+    assert np.allclose(frame.magnetic_line.x, 0.0)
+    assert np.allclose(frame.magnetic_line.y, frame.wave_line.x / INTRINSIC_IMPEDANCE)
+    dot = frame.wave_field.u * frame.magnetic_field.u + frame.wave_field.v * frame.magnetic_field.v
+    assert np.allclose(dot, 0.0)

@@ -9,7 +9,7 @@ from backend.models import PanelText, PlaneData, SpeedFrame, SpeedInput, VectorD
 from backend.physics.geometry import limits, line_from_components, marker_from_point, normalize, plane, point, vector
 from core.exceptions import ValidationError
 
-AXIS_LENGTH = 18.0
+AXIS_LENGTH = 36.0
 NUM_POINTS = 420
 VP_REAL = 1.0
 MIN_ZOOM = 0.6

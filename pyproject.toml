@@ -1,6 +1,6 @@
 [project]
 name = "EWSEngine"
-version = "0.2.2"
+version = "0.2.3"
 description = "Electromagnetic wave simulation engine with desktop UI and local API"
 readme = "README.md"
 requires-python = ">=3.12"

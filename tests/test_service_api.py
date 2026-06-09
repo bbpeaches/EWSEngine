@@ -19,6 +19,28 @@ def test_service_simulates_each_module_with_defaults() -> None:
     for key in ("optics", "polarization", "transmission", "wave", "tem", "speed"):
         result = service.simulate(key)
         assert result is not None
+    assert service.simulate("tem").h_display == "377H"
+
+
+def test_service_supports_lossy_tem_and_wave_magnetic_line() -> None:
+    service = SimulationService()
+    tem_result = service.simulate(
+        "tem",
+        {"mode": "lossy", "direction": "z", "polarity": -1.0, "alpha": 0.3, "beta": 6.0, "speed": 2.0},
+    )
+    wave_result = service.simulate("wave", {"mode": "lossy", "alpha": 0.3, "beta": 5.0})
+    assert len(tem_result.electric_line.x) > 0
+    assert len(tem_result.magnetic_line.x) > 0
+    assert len(wave_result.magnetic_line.x) > 0
+
+
+def test_h_display_radio_is_exposed_for_magnetic_scenes() -> None:
+    service = SimulationService()
+    for key in ("polarization", "transmission", "wave", "tem"):
+        radios = {radio.key: radio for radio in service.get_module(key).radios}
+        assert radios["h_display"].options == ("隐藏", "H", "377H")
+        expected = "377H" if key == "tem" else "隐藏"
+        assert radios["h_display"].value == expected
 
 
 def test_api_health_modules_and_simulation_endpoints() -> None:

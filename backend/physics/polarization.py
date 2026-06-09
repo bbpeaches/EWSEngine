@@ -6,6 +6,7 @@ import numpy as np
 
 from backend.interfaces import SimulationEngine
 from backend.models import (
+    INTRINSIC_IMPEDANCE,
     AxisLimits,
     LineData,
     PanelText,
@@ -18,7 +19,7 @@ from backend.models import (
 from backend.physics.geometry import limits, line_from_components, segment
 from core.exceptions import ValidationError
 
-Z_LENGTH = 12.0
+Z_LENGTH = 24.0
 WAVE_LENGTH = 4.5
 K = 2.0 * np.pi / WAVE_LENGTH
 NUM_Z_POINTS = 320
@@ -46,6 +47,10 @@ class PolarizationEngine(SimulationEngine[PolarizationInput, PolarizationFrame])
         arrow_data = build_mode_data(input_data, ARROW_Z)
         ex = mode_data.ex
         ey = mode_data.ey
+        hx = -ey / INTRINSIC_IMPEDANCE
+        hy = ex / INTRINSIC_IMPEDANCE
+        arrow_hx = -arrow_data.ey / INTRINSIC_IMPEDANCE
+        arrow_hy = arrow_data.ex / INTRINSIC_IMPEDANCE
         ex_tip = float(ex[0])
         ey_tip = float(ey[0])
         axis_limits = build_limits(mode_data.field_extent, input_data.zoom)
@@ -61,6 +66,7 @@ class PolarizationEngine(SimulationEngine[PolarizationInput, PolarizationFrame])
             title=f"{MODE_LABELS[input_data.mode]} · 沿 z 轴传播的 3D 极化波",
             panel=panel_text(input_data, mode_data),
             axis_limits=axis_limits,
+            h_display=input_data.h_display,
             wave_line=line_from_components(ex, ey, Z_POINTS),
             trace_point=(ex_tip, ey_tip, 0.0),
             component_x_line=segment((0.0, 0.0, 0.0), (ex_tip, 0.0, 0.0)),
@@ -77,6 +83,18 @@ class PolarizationEngine(SimulationEngine[PolarizationInput, PolarizationFrame])
                 np.zeros_like(ARROW_Z),
                 mode_data.color,
                 0.45,
+                1.1,
+            ),
+            magnetic_line=line_from_components(hx, hy, Z_POINTS),
+            magnetic_field=VectorFieldData(
+                np.zeros_like(ARROW_Z),
+                np.zeros_like(ARROW_Z),
+                ARROW_Z,
+                arrow_hx,
+                arrow_hy,
+                np.zeros_like(ARROW_Z),
+                "royalblue",
+                0.42,
                 1.1,
             ),
             field_extent=mode_data.field_extent,
@@ -101,6 +119,8 @@ class ModeData:
 def validate(input_data: PolarizationInput) -> None:
     if input_data.mode not in MODE_LABELS:
         raise ValidationError("Unsupported polarization mode.")
+    if input_data.h_display not in {"隐藏", "H", "377H"}:
+        raise ValidationError("Unsupported H display mode.")
     if input_data.zoom <= 0.0:
         raise ValidationError("Zoom must be positive.")
     if input_data.mode in {"phase", "circular"} and (input_data.p1 < 0.0 or input_data.p2 < 0.0):

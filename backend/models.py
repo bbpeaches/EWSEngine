@@ -13,8 +13,11 @@ PolarizationMode = Literal["natural", "s", "p"]
 PolarizationSceneMode = Literal["phase", "circular", "match"]
 TransmissionMode = Literal["vswr", "standing"]
 WaveMode = Literal["material", "lossy", "planes"]
+TemMode = Literal["lossless", "lossy"]
 SpeedMode = Literal["dispersion", "apparent"]
 DirectionKey = Literal["x", "y", "z"]
+HDisplayMode = Literal["隐藏", "H", "377H"]
+INTRINSIC_IMPEDANCE = 377.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +185,7 @@ class PolarizationInput:
     p1: float = 1.0
     p2: float = 1.0
     p3: float = 90.0
+    h_display: HDisplayMode = "隐藏"
     time: float = 0.0
     zoom: float = 1.0
 
@@ -191,6 +195,7 @@ class PolarizationFrame:
     title: str
     panel: PanelText
     axis_limits: AxisLimits
+    h_display: HDisplayMode
     wave_line: LineData
     trace_point: Point3
     component_x_line: LineData
@@ -199,6 +204,8 @@ class PolarizationFrame:
     projection_line: LineData
     antenna_line: LineData
     wave_field: VectorFieldData
+    magnetic_line: LineData
+    magnetic_field: VectorFieldData
     field_extent: float
     status: str
     color: str
@@ -208,6 +215,7 @@ class PolarizationFrame:
 class TransmissionInput:
     mode: TransmissionMode = "vswr"
     reflection_coefficient: float = 0.0
+    h_display: HDisplayMode = "隐藏"
     time: float = 0.0
     zoom: float = 1.0
 
@@ -217,6 +225,7 @@ class TransmissionFrame:
     title: str
     panel: PanelText
     axis_limits: AxisLimits
+    h_display: HDisplayMode
     electric_line: LineData
     magnetic_line: LineData
     envelope_line: LineData
@@ -239,6 +248,7 @@ class WaveInput:
     theta_deg: float = 45.0
     phi_deg: float = 45.0
     spacing: float = 1.5
+    h_display: HDisplayMode = "隐藏"
     time: float = 0.0
     zoom: float = 1.0
 
@@ -248,7 +258,9 @@ class WaveFrame:
     title: str
     panel: PanelText
     axis_limits: AxisLimits
+    h_display: HDisplayMode
     wave_line: LineData
+    magnetic_line: LineData
     envelope_up: LineData
     envelope_down: LineData
     axis_line: LineData
@@ -259,11 +271,15 @@ class WaveFrame:
 
 @dataclass(frozen=True, slots=True)
 class TemInput:
+    mode: TemMode = "lossless"
     direction: DirectionKey = "x"
     polarity: float = 1.0
     amplitude: float = 3.0
     wavelength: float = 5.0
     speed: float = 2.0
+    alpha: float = 0.0
+    beta: float = 5.0
+    h_display: HDisplayMode = "377H"
     time_scale: float = 1.0
     time: float = 0.0
     zoom: float = 1.0
@@ -274,6 +290,8 @@ class TemFrame:
     title: str
     panel: PanelText
     axis_limits: AxisLimits
+    h_display: HDisplayMode
+    direction: DirectionKey
     wave_series: Series2D
     reference_series: Series2D
     peak_point_2d: tuple[float, float]

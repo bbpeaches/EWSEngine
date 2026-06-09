@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from backend.models import INTRINSIC_IMPEDANCE
 from core.types import RadioSpec, SliderSpec
-from frontend.plot_tools import apply_limits, set_line_3d
+from frontend.plot_tools import apply_limits, clear_line, set_line_3d, set_scaled_line_3d, set_scaled_vector_field_lines
 from frontend.scenes.base import BaseSimulationScene
 
 MODE_CONFIG = {
@@ -42,7 +43,10 @@ class PolarizationScene(BaseSimulationScene):
         SliderSpec("p2", "Ey 幅度", 0.0, 1.5, 1.0, 0.05, "forestgreen"),
         SliderSpec("p3", "相位差 phase", -180.0, 180.0, 90.0, 1.0, "darkorange"),
     )
-    radio_specs = (RadioSpec("mode", "实验模式", ("phase", "circular", "match"), "phase"),)
+    radio_specs = (
+        RadioSpec("mode", "实验模式", ("phase", "circular", "match"), "phase"),
+        RadioSpec("h_display", "磁场显示", ("隐藏", "H", "377H"), "隐藏"),
+    )
     presets = PRESETS
     default_elev = 24.0
     default_azim = -58.0
@@ -51,12 +55,14 @@ class PolarizationScene(BaseSimulationScene):
     def init_artists(self) -> None:
         self.ax.set_box_aspect((1.0, 1.0, 1.8))
         self.wave_line, = self.ax.plot([], [], [], color="firebrick", lw=2.2, label="电场波形")
+        self.magnetic_line, = self.ax.plot([], [], [], color="royalblue", lw=2.0, linestyle="--", label="磁场 H / 377H")
         self.component_x, = self.ax.plot([], [], [], color="royalblue", lw=2.0, label="Ex 分量")
         self.component_y, = self.ax.plot([], [], [], color="forestgreen", lw=2.0, label="Ey 分量")
         self.total_line, = self.ax.plot([], [], [], color="firebrick", lw=3.0, label="总电场")
         self.projection_line, = self.ax.plot([], [], [], color="darkorange", lw=3.0, label="接收投影")
         self.antenna_line, = self.ax.plot([], [], [], color="black", lw=2.6, label="接收天线")
         self.wave_field_lines = self.create_vector_field_artists(24)
+        self.magnetic_field_lines = self.create_vector_field_artists(24)
         self.ax.legend(loc="upper left", fontsize=9)
 
     def on_mount(self, app: Any) -> None:
@@ -91,8 +97,22 @@ class PolarizationScene(BaseSimulationScene):
         self.wave_line.set_color(frame["color"])
         self.total_line.set_color(frame["color"])
         self.update_vector_field(self.wave_field_lines, frame["wave_field"])
+        self._render_magnetic(frame)
         apply_limits(self.ax, frame["axis_limits"])
         return _panel(frame)
+
+    def _render_magnetic(self, frame: dict[str, Any]) -> None:
+        h_display = frame.get("h_display", "隐藏")
+        if h_display == "隐藏":
+            clear_line(self.magnetic_line)
+            self.magnetic_line.set_visible(False)
+            for line in self.magnetic_field_lines:
+                clear_line(line)
+                line.set_visible(False)
+            return
+        scale = INTRINSIC_IMPEDANCE if h_display == "377H" else 1.0
+        set_scaled_line_3d(self.magnetic_line, frame["magnetic_line"], ("x", "y"), scale)
+        set_scaled_vector_field_lines(self.magnetic_field_lines, frame["magnetic_field"], ("x", "y"), scale)
 
 
 def _panel(frame: Mapping[str, Any]) -> Mapping[str, Any]:

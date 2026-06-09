@@ -15,7 +15,15 @@ def set_line_3d(line: object, data: Mapping[str, Any] | object) -> None:
         _as_float_array(_get_value(data, "y")),
         _as_float_array(_get_value(data, "z")),
     )
+    line.set_visible(True)
 
+
+def set_scaled_line_3d(line: object, data: Mapping[str, Any] | object, axes: Sequence[str], scale: float) -> None:
+    values = {axis: _as_float_array(_get_value(data, axis)).copy() for axis in ("x", "y", "z")}
+    for axis in axes:
+        values[axis] *= scale
+    line.set_data_3d(values["x"], values["y"], values["z"])
+    line.set_visible(True)
 
 def clear_line(line: object) -> None:
     empty = np.empty(0, dtype=float)
@@ -29,6 +37,18 @@ def set_marker(line: object, marker: Mapping[str, Any] | object) -> None:
         return
     coords = _as_point(point)
     line.set_data_3d(coords[0:1], coords[1:2], coords[2:3])
+
+
+def set_scaled_marker(line: object, marker: Mapping[str, Any] | object, axes: Sequence[str], scale: float) -> None:
+    point = _get_value(marker, "point")
+    if point is None:
+        clear_line(line)
+        return
+    coords = _as_point(point).copy()
+    for axis in axes:
+        coords[{"x": 0, "y": 1, "z": 2}[axis]] *= scale
+    line.set_data_3d(coords[0:1], coords[1:2], coords[2:3])
+    line.set_visible(True)
 
 
 def apply_limits(ax: object, limits: Mapping[str, Any] | object) -> None:
@@ -110,6 +130,28 @@ def set_vector_line(line: object, vector: Mapping[str, Any] | object | None) -> 
     line.set_visible(True)
 
 
+def set_scaled_vector_line(line: object, vector: Mapping[str, Any] | object | None, axes: Sequence[str], scale: float) -> None:
+    if vector is None:
+        clear_line(line)
+        line.set_visible(False)
+        return
+    start = _as_point(_get_value(vector, "start"))
+    end = _as_point(_get_value(vector, "end"))
+    delta = end - start
+    for axis in axes:
+        delta[{"x": 0, "y": 1, "z": 2}[axis]] *= scale
+    end = start + delta
+    line.set_data_3d(
+        np.asarray([start[0], end[0]], dtype=float),
+        np.asarray([start[1], end[1]], dtype=float),
+        np.asarray([start[2], end[2]], dtype=float),
+    )
+    line.set_color(_get_value(vector, "color"))
+    line.set_linewidth(float(_get_value(vector, "width", 2.4)))
+    line.set_alpha(float(_get_value(vector, "alpha", 0.95)))
+    line.set_visible(True)
+
+
 def draw_vector_field(ax: object, field: Mapping[str, Any] | object) -> object:
     return ax.quiver(
         _as_float_array(_get_value(field, "x")),
@@ -142,6 +184,47 @@ def set_vector_field_lines(lines: Sequence[object], field: Mapping[str, Any] | o
         ],
         axis=1,
     )
+    color = _get_value(field, "color")
+    alpha = float(_get_value(field, "alpha", 0.5))
+    linewidth = float(_get_value(field, "linewidth", 1.1))
+    count = min(len(lines), len(starts))
+    for index, line in enumerate(lines):
+        if index >= count:
+            clear_line(line)
+            line.set_visible(False)
+            continue
+        start = starts[index]
+        end = start + deltas[index]
+        line.set_data_3d(
+            np.asarray([start[0], end[0]], dtype=float),
+            np.asarray([start[1], end[1]], dtype=float),
+            np.asarray([start[2], end[2]], dtype=float),
+        )
+        line.set_color(color)
+        line.set_alpha(alpha)
+        line.set_linewidth(linewidth)
+        line.set_visible(True)
+
+
+def set_scaled_vector_field_lines(lines: Sequence[object], field: Mapping[str, Any] | object, axes: Sequence[str], scale: float) -> None:
+    starts = np.stack(
+        [
+            _as_float_array(_get_value(field, "x")).reshape(-1),
+            _as_float_array(_get_value(field, "y")).reshape(-1),
+            _as_float_array(_get_value(field, "z")).reshape(-1),
+        ],
+        axis=1,
+    )
+    deltas = np.stack(
+        [
+            _as_float_array(_get_value(field, "u")).reshape(-1),
+            _as_float_array(_get_value(field, "v")).reshape(-1),
+            _as_float_array(_get_value(field, "w")).reshape(-1),
+        ],
+        axis=1,
+    )
+    for axis in axes:
+        deltas[{"x": 0, "y": 1, "z": 2}[axis]] *= scale
     color = _get_value(field, "color")
     alpha = float(_get_value(field, "alpha", 0.5))
     linewidth = float(_get_value(field, "linewidth", 1.1))

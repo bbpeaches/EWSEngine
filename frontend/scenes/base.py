@@ -15,6 +15,17 @@ from frontend.client import SimulationClient
 from frontend.plot_tools import set_plane_collection, set_vector_field_lines, set_vector_line
 
 
+VIEW_PRESETS: Mapping[str, tuple[float, float] | None] = {
+    "默认": None,
+    "+X 投影": (0.0, 0.0),
+    "-X 投影": (0.0, 180.0),
+    "+Y 投影": (0.0, 90.0),
+    "-Y 投影": (0.0, -90.0),
+    "+Z 投影": (90.0, -90.0),
+    "-Z 投影": (-90.0, -90.0),
+}
+
+
 class BaseSimulationScene(ABC):
     """Lightweight scene contract shared by Tk windows and headless smoke tests."""
 
@@ -26,6 +37,7 @@ class BaseSimulationScene(ABC):
     default_elev = 24.0
     default_azim = -58.0
     axis_labels = ("X", "Y", "Z")
+    view_presets = VIEW_PRESETS
 
     def __init__(self, ax: Axes3D | None = None, figure: Figure | None = None) -> None:
         self.fig = figure or plt.figure(figsize=(10.5, 7.8))
@@ -47,6 +59,14 @@ class BaseSimulationScene(ABC):
 
     def reset_view(self) -> None:
         self.ax.view_init(elev=self.default_elev, azim=self.default_azim)
+
+    def apply_view_preset(self, name: str) -> None:
+        view = self.view_presets.get(name)
+        if view is None:
+            self.reset_view()
+            return
+        elev, azim = view
+        self.ax.view_init(elev=elev, azim=azim)
 
     def show(self) -> None:
         plt.show()
