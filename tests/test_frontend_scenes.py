@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import pytest
+
 from backend.service import ensure_registry
-from frontend.app_v2 import APP_VERSION, ModernAppBase
+from frontend.app_v2 import ANIMATION_TIME_FACTOR, APP_VERSION, ModernAppBase
 from frontend.scenes.optics import OpticsScene
 from frontend.scenes.polarization import PolarizationScene
 from frontend.scenes.speed import SpeedScene
@@ -95,8 +100,32 @@ def test_tem_scene_defaults_to_377h() -> None:
 def test_app_version_and_zoom_label() -> None:
     app = object.__new__(ModernAppBase)
     app.zoom = 1.0
-    assert APP_VERSION == "0.2.3"
+    with (Path(__file__).resolve().parents[1] / "pyproject.toml").open("rb") as file:
+        expected_version = tomllib.load(file)["project"]["version"]
+    assert APP_VERSION == expected_version
     assert app._format_zoom() == "缩放 1.00x"
+
+
+def test_animation_tick_uses_elapsed_time(monkeypatch) -> None:
+    ticks = iter((10.2, 11.5))
+    monkeypatch.setattr("frontend.app_v2.time.monotonic", lambda: next(ticks))
+    app = object.__new__(ModernAppBase)
+    app.time = 1.0
+    app._last_tick_time = 10.0
+    app._closed = False
+    app.is_paused = False
+    app._is_rendering = False
+    app.slider_vars = {"time_scale": FakeVar(2.0)}
+    app._request_render = lambda: None
+    app._schedule_animation = lambda: None
+
+    app._animation_tick()
+    assert app.time == pytest.approx(1.0 + 0.2 * ANIMATION_TIME_FACTOR * 2.0)
+
+    app.is_paused = True
+    app._animation_tick()
+    assert app.time == pytest.approx(1.0 + 0.2 * ANIMATION_TIME_FACTOR * 2.0)
+    assert app._last_tick_time == 11.5
 
 
 def ensure_modules():

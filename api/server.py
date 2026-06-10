@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, is_dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-import numpy as np
-
+from backend.interfaces import to_jsonable
 from backend.service import SimulationService, ensure_registry, module_summary
 from core.exceptions import ApiError, EWSEError, RegistryError, ValidationError
 
@@ -47,12 +45,20 @@ class SimulationRequestHandler(BaseHTTPRequestHandler):
         return
 
     def _read_json(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", "0"))
+        raw_length = self.headers.get("Content-Length", "0")
+        try:
+            length = int(raw_length)
+        except ValueError as exc:
+            raise ApiError("Content-Length must be a non-negative integer.") from exc
+        if length < 0:
+            raise ApiError("Content-Length must be a non-negative integer.")
         if length == 0:
             return {}
         raw = self.rfile.read(length)
         try:
             data = json.loads(raw.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            raise ApiError(f"Request body must be UTF-8: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise ApiError(f"Invalid JSON body: {exc}") from exc
         if not isinstance(data, dict):
@@ -75,24 +81,10 @@ class SimulationRequestHandler(BaseHTTPRequestHandler):
             super().handle_one_request()
         except RegistryError as exc:
             self._send_error(HTTPStatus.NOT_FOUND, str(exc))
-        except (ValidationError, ApiError) as exc:
+        except (ValidationError, ApiError, TypeError, ValueError) as exc:
             self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
         except EWSEError as exc:
             self._send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
-
-
-def to_jsonable(value: Any) -> Any:
-    if is_dataclass(value):
-        return {key: to_jsonable(item) for key, item in asdict(value).items()}
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, tuple):
-        return [to_jsonable(item) for item in value]
-    if isinstance(value, list):
-        return [to_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): to_jsonable(item) for key, item in value.items()}
-    return value
 
 
 def create_server(host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:

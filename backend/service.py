@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Any, Mapping
+from collections.abc import Mapping
+from dataclasses import MISSING, Field, fields, is_dataclass
+from typing import Any
+
+from backend.interfaces import to_jsonable
 
 from backend.models import (
     OpticsInput,
@@ -17,6 +20,7 @@ from backend.physics.speed import SpeedEngine
 from backend.physics.tem import TemEngine
 from backend.physics.transmission import TransmissionEngine
 from backend.physics.wave import MATERIALS, WaveEngine
+from core.exceptions import ValidationError
 from core.registry import registry
 from core.types import JsonDict, ModuleSpec, RadioSpec, SliderSpec
 
@@ -78,8 +82,72 @@ class SimulationService:
 
     def simulate(self, key: str, payload: Mapping[str, Any] | None = None) -> Any:
         spec = self.get_module(key)
-        model = spec.input_model(**dict(payload or {}))
-        return spec.engine.simulate(model)
+        model = build_input_model(spec, payload)
+        try:
+            return spec.engine.simulate(model)
+        except TypeError as exc:
+            raise ValidationError(str(exc)) from exc
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+
+def _coerce_input_value(spec: ModuleSpec[Any, Any], field: Field[Any], value: Any) -> Any:
+    radios = {radio.key: radio for radio in spec.radios}
+    if field.name in radios:
+        radio = radios[field.name]
+        if field.default is not MISSING and isinstance(field.default, float):
+            if isinstance(value, bool):
+                raise ValidationError(f"Field '{field.name}' must be numeric, got bool.")
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(f"Field '{field.name}' must be numeric.") from exc
+            valid_values = {float(option) for option in radio.options}
+            if numeric not in valid_values:
+                options = ", ".join(radio.options)
+                raise ValidationError(f"Invalid value for '{field.name}': {value!r}. Expected one of: {options}.")
+            return numeric
+        text = str(value)
+        if text not in radio.options:
+            options = ", ".join(radio.options)
+            raise ValidationError(f"Invalid value for '{field.name}': {text!r}. Expected one of: {options}.")
+        return text
+    if field.default is not MISSING and isinstance(field.default, str):
+        return str(value)
+    if isinstance(value, bool):
+        raise ValidationError(f"Field '{field.name}' must be numeric, got bool.")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"Field '{field.name}' must be numeric.") from exc
+
+
+def build_input_model(spec: ModuleSpec[Any, Any], payload: Mapping[str, Any] | None = None) -> Any:
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, Mapping):
+        raise ValidationError("Simulation payload must be a JSON object.")
+    input_model = spec.input_model
+    if not is_dataclass(input_model):
+        try:
+            return input_model(**dict(payload))
+        except TypeError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    model_fields = {field.name: field for field in fields(input_model)}
+    unknown = set(payload) - set(model_fields)
+    if unknown:
+        names = ", ".join(sorted(str(name) for name in unknown))
+        raise ValidationError(f"Unknown input field(s): {names}.")
+
+    coerced = {
+        key: _coerce_input_value(spec, model_fields[key], value)
+        for key, value in payload.items()
+    }
+    try:
+        return input_model(**coerced)
+    except TypeError as exc:
+        raise ValidationError(str(exc)) from exc
 
 
 def ensure_registry(*, include_scenes: bool) -> None:
@@ -249,7 +317,7 @@ def module_summary(spec: ModuleSpec[Any, Any]) -> JsonDict:
         "key": spec.key,
         "name": spec.name,
         "description": spec.description,
-        "presets": {name: dict(values) for name, values in spec.presets.items()},
-        "sliders": [asdict(slider) for slider in spec.sliders],
-        "radios": [asdict(radio) for radio in spec.radios],
+        "presets": {name: to_jsonable(values) for name, values in spec.presets.items()},
+        "sliders": [to_jsonable(slider) for slider in spec.sliders],
+        "radios": [to_jsonable(radio) for radio in spec.radios],
     }

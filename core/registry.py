@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Any, Generic, TypeVar
 
 from core.exceptions import RegistryError
@@ -13,17 +14,20 @@ class SingletonMeta(type):
     """Metaclass used for process-wide singletons."""
 
     _instances: dict[type[Any], Any] = {}
+    _lock = threading.RLock()
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
+        with cls._lock:
+            if cls not in cls._instances:
+                cls._instances[cls] = super().__call__(*args, **kwargs)
+            return cls._instances[cls]
 
 
 class SimulationRegistry(Generic[InputT, OutputT], metaclass=SingletonMeta):
     """Typed registry for simulation modules and scenes."""
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self._modules: dict[str, ModuleSpec[Any, Any]] = {}
         self._names: dict[str, str] = {}
 
@@ -48,26 +52,30 @@ class SimulationRegistry(Generic[InputT, OutputT], metaclass=SingletonMeta):
                 scene_factory=lambda: scene_class,
             )
 
-        if not spec.key:
-            raise RegistryError("Module key cannot be empty.")
-        if spec.key in self._modules and not replace:
-            raise RegistryError(f"Module '{spec.key}' is already registered.")
-        self._modules[spec.key] = spec
-        self._names[spec.name] = spec.key
+        with self._lock:
+            if not spec.key:
+                raise RegistryError("Module key cannot be empty.")
+            if spec.key in self._modules and not replace:
+                raise RegistryError(f"Module '{spec.key}' is already registered.")
+            self._modules[spec.key] = spec
+            self._names[spec.name] = spec.key
 
     def get(self, key: str) -> ModuleSpec[Any, Any]:
-        if key in self._modules:
-            return self._modules[key]
-        if key in self._names:
-            return self._modules[self._names[key]]
+        with self._lock:
+            if key in self._modules:
+                return self._modules[key]
+            if key in self._names:
+                return self._modules[self._names[key]]
         raise RegistryError(f"Module '{key}' is not registered.")
 
     def all(self) -> tuple[ModuleSpec[Any, Any], ...]:
-        return tuple(self._modules.values())
+        with self._lock:
+            return tuple(self._modules.values())
 
     def clear(self) -> None:
-        self._modules.clear()
-        self._names.clear()
+        with self._lock:
+            self._modules.clear()
+            self._names.clear()
 
     def get_scene(self, name: str) -> type[Any]:
         spec = self.get(name)

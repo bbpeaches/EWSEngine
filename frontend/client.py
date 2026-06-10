@@ -4,12 +4,9 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
-from dataclasses import is_dataclass
 from typing import Any
 
-import numpy as np
-
-from backend.interfaces import dataclass_to_mapping
+from backend.interfaces import to_mapping_tree, to_jsonable
 from backend.service import SimulationService
 from core.exceptions import FrontendError
 
@@ -41,9 +38,10 @@ class SimulationClient:
             result = self._service.simulate(module_key, payload)
         except Exception as exc:  # noqa: BLE001 - keep the UI boundary resilient.
             raise FrontendError(f"Local simulation failed for '{module_key}': {exc}") from exc
-        if is_dataclass(result):
-            return dataclass_to_mapping(result)
-        return result
+        frame = to_mapping_tree(result)
+        if not isinstance(frame, dict):
+            return frame
+        return frame
 
     def _fetch_http(self, module_key: str, payload: Mapping[str, Any]) -> Any:
         url = f"http://{self.host}:{self.port}/simulate/{module_key}"
@@ -85,17 +83,7 @@ def _normalize_mapping(value: Any) -> dict[str, Any]:
 
 
 def _normalize_value(value: Any) -> Any:
-    if is_dataclass(value):
-        return _normalize_value(dataclass_to_mapping(value))
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, Mapping):
-        return {str(key): _normalize_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_normalize_value(item) for item in value]
-    return value
+    return to_jsonable(value)
 
 
 def _http_error_message(exc: urllib.error.HTTPError) -> str:

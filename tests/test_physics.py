@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from backend.models import INTRINSIC_IMPEDANCE, OpticsInput, PolarizationInput, SpeedInput, TemInput, TransmissionInput, WaveInput
@@ -24,6 +26,20 @@ def test_tir_returns_full_reflection() -> None:
     assert result.active_R == 1.0
     assert result.active_T == 0.0
     assert result.theta_t_deg is None
+
+
+def test_critical_angle_is_treated_as_tir_boundary() -> None:
+    critical = math.degrees(math.asin(1.0 / 1.5))
+    result = fresnel(OpticsInput(n1=1.5, n2=1.0, theta_deg=critical, polarization="natural"))
+    assert result.is_tir
+    assert result.theta_t_deg is None
+
+
+def test_apparent_speed_near_ninety_degrees_stays_finite() -> None:
+    frame = SpeedEngine().simulate(SpeedInput(mode="apparent", theta_deg=85.0))
+    assert frame.apparent_marker.point is not None
+    assert all(np.isfinite(frame.apparent_marker.point))
+    assert all("inf" not in line.lower() for line in frame.panel.status_lines + frame.panel.metrics_lines)
 
 
 def test_phase_classification_detects_circular_polarization() -> None:

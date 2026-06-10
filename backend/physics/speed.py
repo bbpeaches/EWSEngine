@@ -120,7 +120,8 @@ def render_apparent(input_data: SpeedInput) -> SpeedFrame:
     e_prop, e_field, e_side = basis(input_data)
     theta = np.radians(input_data.theta_deg)
     cos_theta = float(np.cos(theta))
-    safe_cos = np.sign(cos_theta) * max(abs(cos_theta), COS_EPS)
+    sign = 1.0 if cos_theta >= 0.0 else -1.0
+    safe_cos = sign * max(abs(cos_theta), COS_EPS)
     spacing = max(input_data.carrier_lambda * 1.5, 3.0)
     half_span = 2.3 + 0.45 * input_data.amplitude
     k_vec = normalize(np.cos(theta) * e_prop + np.sin(theta) * e_field)

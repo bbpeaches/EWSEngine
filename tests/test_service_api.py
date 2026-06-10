@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
+import urllib.error
 import urllib.request
+from dataclasses import dataclass
+
+import numpy as np
+import pytest
 
 from api.server import create_server
+from backend.interfaces import dataclass_to_mapping, to_jsonable
+from backend.models import LineData
 from backend.service import SimulationService
+from core.exceptions import ValidationError
 
 
 def test_service_lists_all_registered_modules() -> None:
@@ -43,6 +52,40 @@ def test_h_display_radio_is_exposed_for_magnetic_scenes() -> None:
         assert radios["h_display"].value == expected
 
 
+def test_service_rejects_invalid_payloads() -> None:
+    service = SimulationService()
+    with pytest.raises(ValidationError, match="Unknown input field"):
+        service.simulate("optics", {"theta_deg": 35.0, "surprise": 1.0})
+    with pytest.raises(ValidationError, match="numeric"):
+        service.simulate("optics", {"theta_deg": "wide"})
+    with pytest.raises(ValidationError, match="Invalid value"):
+        service.simulate("wave", {"mode": "unknown"})
+
+
+def test_service_coerces_radio_and_numeric_payloads() -> None:
+    service = SimulationService()
+    frame = service.simulate("tem", {"polarity": "-1", "speed": "2.5"})
+    assert frame is not None
+
+
+@dataclass(frozen=True, slots=True)
+class ArrayEnvelope:
+    line: LineData
+    scalar: np.float64
+
+
+def test_shared_serializer_preserves_local_arrays_and_normalizes_json() -> None:
+    line = LineData(np.asarray([1.0, 2.0]), np.asarray([3.0, 4.0]), np.asarray([5.0, 6.0]))
+    envelope = ArrayEnvelope(line=line, scalar=np.float64(7.5))
+
+    shallow = dataclass_to_mapping(envelope)
+    assert shallow["line"] is line
+    assert to_jsonable(envelope) == {
+        "line": {"x": [1.0, 2.0], "y": [3.0, 4.0], "z": [5.0, 6.0]},
+        "scalar": 7.5,
+    }
+
+
 def test_api_health_modules_and_simulation_endpoints() -> None:
     server = create_server(port=0)
     host, port = server.server_address
@@ -67,6 +110,76 @@ def test_api_health_modules_and_simulation_endpoints() -> None:
             result = json.loads(response.read().decode("utf-8"))["result"]
         assert result["result"]["is_tir"] is False
         assert result["result"]["R_s"] > 0.0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def _start_test_server():
+    server = create_server(port=0)
+    host, port = server.server_address
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread, host, port
+
+
+def _post_json(url: str, data: bytes, headers: dict[str, str] | None = None) -> tuple[int, dict[str, object]]:
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers or {"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+def test_api_rejects_bad_simulation_requests() -> None:
+    server, thread, host, port = _start_test_server()
+    try:
+        url = f"http://{host}:{port}/simulate/optics"
+        cases = (
+            (b"{", "Invalid JSON body"),
+            (json.dumps(["not", "object"]).encode("utf-8"), "JSON body must be an object"),
+            (json.dumps({"theta_deg": "wide"}).encode("utf-8"), "must be numeric"),
+            (json.dumps({"polarization": "q"}).encode("utf-8"), "Invalid value"),
+            (json.dumps({"theta_deg": 35.0, "extra": 1.0}).encode("utf-8"), "Unknown input field"),
+        )
+        for data, expected in cases:
+            status, payload = _post_json(url, data)
+            assert status == 400
+            assert expected in str(payload["error"])
+
+        status, payload = _post_json(f"http://{host}:{port}/simulate/missing", b"{}")
+        assert status == 404
+        assert "not registered" in str(payload["error"])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_api_rejects_invalid_content_length() -> None:
+    server, thread, host, port = _start_test_server()
+    try:
+        with socket.create_connection((host, port), timeout=3) as sock:
+            request = (
+                "POST /simulate/optics HTTP/1.1\r\n"
+                f"Host: {host}:{port}\r\n"
+                "Content-Type: application/json\r\n"
+                "Content-Length: invalid\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "{}"
+            )
+            sock.sendall(request.encode("utf-8"))
+            response = sock.recv(4096).decode("utf-8", errors="replace")
+        assert "400 Bad Request" in response
+        assert "Content-Length" in response
     finally:
         server.shutdown()
         server.server_close()

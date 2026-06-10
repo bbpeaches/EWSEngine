@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import platform
+import time
 import tkinter as tk
+import tomllib
 from collections.abc import Mapping
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Any, Protocol
 
 import matplotlib.pyplot as plt
@@ -16,9 +20,19 @@ from core.types import RadioSpec, SliderSpec
 from frontend.client import SimulationClient
 from frontend.scenes.optics import OpticsScene
 
-APP_VERSION = "0.2.3"
+def _package_version() -> str:
+    try:
+        return version("EWSEngine")
+    except PackageNotFoundError:
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        with pyproject.open("rb") as file:
+            return str(tomllib.load(file)["project"]["version"])
+
+
+APP_VERSION = _package_version()
 RENDER_DELAY_MS = 20
 ANIMATION_INTERVAL_MS = 90
+ANIMATION_TIME_FACTOR = 0.55
 
 
 class SceneFactory(Protocol):
@@ -46,6 +60,7 @@ class ModernAppBase:
         self._render_job: str | None = None
         self._animation_job: str | None = None
         self._suspend_controls = False
+        self._last_tick_time = time.monotonic()
         self.slider_vars: dict[str, tk.DoubleVar] = {}
         self.slider_label_vars: dict[str, tk.StringVar] = {}
         self.slider_value_vars: dict[str, tk.StringVar] = {}
@@ -452,10 +467,13 @@ class ModernAppBase:
         self._animation_job = self.after(ANIMATION_INTERVAL_MS, self._animation_tick)
 
     def _animation_tick(self) -> None:
+        now = time.monotonic()
+        dt = now - self._last_tick_time
+        self._last_tick_time = now
         if self._closed:
             return
         if not self.is_paused and not self._is_rendering:
-            self.time += 0.05 * self._time_scale()
+            self.time += dt * ANIMATION_TIME_FACTOR * self._time_scale()
             self._request_render()
 
         self._schedule_animation()

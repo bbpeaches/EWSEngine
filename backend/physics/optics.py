@@ -38,6 +38,7 @@ DIPOLE_SCALE = 0.72
 MIN_ZOOM = 0.65
 MAX_ZOOM = 4.0
 TOLERANCE = 1e-10
+CRITICAL_EPS = 1e-12
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +137,7 @@ def fresnel(input_data: OpticsInput) -> FresnelResult:
     theta_b = float(np.degrees(np.arctan2(input_data.n2, input_data.n1)))
     theta_c = float(np.degrees(np.arcsin(input_data.n2 / input_data.n1))) if input_data.n1 > input_data.n2 else None
 
-    if sin_theta_t > 1.0 + TOLERANCE:
+    if sin_theta_t >= 1.0 - CRITICAL_EPS:
         return tir_result(input_data, theta_i, theta_b, theta_c)
 
     sin_theta_t = float(np.clip(sin_theta_t, -1.0, 1.0))
